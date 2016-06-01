@@ -1,0 +1,113 @@
+\documentclass{beamer}
+\usepackage{hyperref, mathrsfs, tikz, ulem}
+\usecolortheme[RGB={34, 139, 34}]{structure}
+\usetheme{Singapore}
+\setbeamertemplate{navigation symbols}{\insertframenumber}
+
+\def\A{\mathcal A}\def\B{\mathcal B}\def\C{\mathcal C}\def\D{\mathcal D}
+\def\E{\mathcal E}\def\F{\mathcal F}\def\G{\mathcal G}\def\J{\mathcal J}
+\def\L{\mathcal L}\def\M{\mathcal M}\def\N{\mathcal N}\def\O{\mathcal O}
+\def\P{\mathcal P}\def\Q{\mathcal Q}\def\R{\mathcal R}\def\S{\mathcal S}
+\def\T{\mathcal T}\def\W{\mathcal W}\def\V{\mathcal V}\def\X{\mathcal X}
+\def\Y{\mathcal Y}\def\Z{\mathcal Z}
+\def\mI{\mathbb I}\def\mN{\mathbb N}\def\mP{\mathbb P}\def\mR{\mathbb R}
+\def\mS{\mathbb S}
+\def\bA{{\bf A}}\def\bB{{\bf B}}\def\bC{{\bf C}}\def\bE{{\bf E}}\def\bP{{\bf P}}
+\def\bU{{\bf U}}\def\bV{{\bf V}}\def\bX{{\bf X}}\def\bY{{\bf Y}}
+\def\bx{{\bf x}}
+\def\bSigma{{\bf \Sigma}}
+\def\prob{\mbox{\bf prob}}\def\tr{\mbox{\bf tr}}
+\def\l{\left}\def\r{\right}\def\lf{\lfloor}\def\rf{\rfloor}
+\def\un{\underline}
+\def\theat{\theta}\def\lambad{\lambda}\def\lamda{\lambda}
+\def\iid{\stackrel{\mbox{\scriptsize i.i.d.}}{\sim}}
+\def\ind{\stackrel{\mbox{\scriptsize ind.}}{\sim}}
+\def\minimize{\mbox{minimize}\hspace{4mm}}
+\def\maximize{\mbox{maximize}\hspace{4mm}}
+\def\subjectto{\mbox{subject to}\hspace{4mm}}
+
+\begin{document}
+
+\begin{frame}{Introduction: sample problem (PAD)}
+Peripheral Artery Disease (PAD) cohort:
+\begin{itemize}
+    \item $n = 5757$ patients
+    \item Tx variable: cilostazol
+    \item 20 outcomes measured
+    \item explanatory variables:
+    \begin{itemize}
+        \item 6 demographic, 13 ``expert'' (used to determine Tx)
+        \item 447 empirical variables
+    \end{itemize}
+\end{itemize}~\\
+Goal: For a query patient, estimate which of treatment or control will be
+more effective, i.e. yield a better outcome.\\
+Beware observational data!
+\end{frame}
+
+\begin{frame}{Causal inference}
+\begin{itemize}
+\item Framework for using observational data when experimental data would be
+    desired
+\item Key assumption: {\bf given covariates}, treatment assignment is
+    independent of (unobserved) response
+\item General approach: create model to estimate propensity score, which is
+    probability of treatment assignment
+\item Takeaway from Low, Gallego \& Shaw (2015): PS methods struggled on
+    intricate simulation
+\end{itemize}
+\end{frame}
+
+\begin{frame}{A proposed approach}
+Motivation: For a query patient, estimate which of treatment or control will be
+more effective, i.e. yield a better outcome.\\
+Beware observational data!
+\begin{enumerate}
+\item Estimate the propensity score for each patient (using e.g. random forest)
+    and bin patients by propensity score.\\
+    Within each bin:
+\item Build a decision tree by, at each split, maximizing the difference
+    between the two treatment effects estimated at the two daughter nodes.
+\end{enumerate}
+Can use important scores from both steps above to explain prediction to doctors
+\end{frame}
+
+\begin{frame}{Step 2 illustrated}
+\end{frame}
+
+\begin{frame}{Simulated data example}
+Contingency table:
+\begin{center}
+\begin{tabular}{c|c|c|}
+        & Control   & Treatment\\
+        \hline
+Male    & 10        & 50\\
+\hline
+Female  & 40        & 40\\
+\hline
+\end{tabular}\\~\\
+$$Y_i = 10 + 10*\mI\{\mbox{sex} = F\} + 10*\mI\{\mbox{Tx} = 1\} + \epsilon_i$$
+$$\epsilon_i \iid \mbox{Normal(0, \mbox{s.d.} = 5)}$$
+\end{center}
+Actual Tx effect: 10\\
+Naive Tx effect estimate: 6
+\end{frame}
+
+\begin{frame}{Simulation results}
+\centering
+\includegraphics[height = \textheight]{../figs/simulation2.pdf}
+\end{frame}
+
+\begin{frame}{Next steps}
+\begin{itemize}
+\item Have framework for decision trees to identify heterogeneous treatment
+    effects
+    \begin{itemize}
+    \item Can try making minor tweaks
+    \item Can apply to more simulated datasets
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+\end{document}
+

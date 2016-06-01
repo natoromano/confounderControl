@@ -1,0 +1,17 @@
+load("/Users/dsromano/Documents/Stanford/Shah Lab/confounderControl/models/sim2000x10/tuneNsdEuc.RData")
+ls(all=T)
+resultsArrayEuc
+resultsArrayEuc$n1
+resultsArrayEuc[1]
+resultsArrayEuc[2]
+resultsArrayEuc[1,2]
+resultsArrayEuc[10]
+resultsArrayEuc[100]
+nrow(resultsArrayEuc)
+colnames(resultsArrayEuc)
+a = c('a', 'b', 'c')
+f = data.frame(colnames=a)
+f
+f = data.frame(columns=a)
+f
+f = data.frame(paste(a), numeric(0), sep='=')

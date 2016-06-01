@@ -1,19 +1,15 @@
+###############################################################################
+# (Script)
 # To sim data 2000 x 10 variables, do expertPS, hdPS, lasso logit, RF,
 # Euclidean dist, Jaccard, Dice, Cosine similarities, Pearson and Spearman correl
 # 
 # 20-Apr-14 Yen Low
+# 22-Feb-16 refactoring, Nathanael Romano
 ##############################################################################
-#
-#
-#############SET PARAMETERS######################
-RScriptPath=Sys.getenv("RScriptPath") #Rscriptpath is an environment variable, path="/mnt/hgfs/Dropbox"
-ProjectPath=Sys.getenv("ProjectPath") #Project is an environment variable, path="/mnt/hgfs/projects"
-#RScriptPath="~"
-#ProjectPath="~/projects"
-setwd(paste(ProjectPath,"/psm/models/sim2000x10_compare",sep=""))
+
+############# SETUP #############
+# setwd("Documents/Stanford/Shah Lab/confounderControl/models/sim2000x10_compare")
 getwd()
-
-
 load(file="../sim2000x10/tuneCalSim.RData")
 
 apply(resultsArrayCal[,"ORmatched",,],c(1,2),mean,na.rm=T)

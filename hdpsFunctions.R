@@ -1,16 +1,19 @@
+###############################################################################
+# (Functions)
 # Functions for HDPS
 # Calls Pharmacoepi Toolbox 2.4.15 (pharmacoepi.jar)
 # Requires Java
 #
 # 15-Oct-14 suppressMessages from confint used for glm; updated comments
 # 04-Sep-14 Yen Low
+# 22-Feb-16 refactoring, Nathanael Romano
 ###############################################################################
 
-#RScriptPath=Sys.getenv("RScriptPath")
-#RScriptPath="~/scripts"
-source(paste(RScriptPath,"/R/utils.R",sep="")) #installnewpackage
+RScriptPath="/home/yenlow/scripts"
+source(paste(RScriptPath,"/R/utils.R", sep="")) # installnewpackage
+source(paste(RScriptPath,"/R/logit.R", sep="")) # coeffAtlambda
 
-installnewpackage(c("rJava","flexmix","ROCR","Epi","reshape","scales"))
+installnewpackage(c("rJava", "flexmix", "ROCR", "Epi", "reshape", "scales"))
 require(flexmix)
 require(rJava)
 require(ROCR)
@@ -18,476 +21,565 @@ require(Epi)
 require(reshape)
 
 logit<-function(x) log(x/(1-x))
-
 unlogit<-function(x) 1/(1+exp(-x))
 
-hdps <- function(datainstring,dimdata,outDir,Nmostfreq=100,k=500,stratifyDim=FALSE,
-					outfile="output_cohort.txt",FullOutput=T,verbose=T,ZeroCellCorrection=F){
+############# HDPS #############
+hdps <- function(datainstring, dimdata, outDir, Nmostfreq=100, k=500,
+                 stratifyDim=FALSE, outfile="output_cohort.txt",
+                 FullOutput=T, verbose=T, ZeroCellCorrection=F) {
 	flush.console()
 	
 	# Instantiate an hd-PS object
-	if(exists("x")) rm(x)
-	x=.jnew("org.drugepi.hdps.Hdps");
+	if (exists("x")) rm(x)
+	x <- .jnew("org.drugepi.hdps.Hdps");
 	
 	# Set hd-PS parameters
 	.jfield(x, "tempDirectory") = outDir
-	.jfield(x, "fullOutputFilename") = outfile #in tempDirectory
-	.jfield(x, "topN") = as.integer(Nmostfreq) #N most freq variables
-	.jfield(x, "k") = as.integer(k);  #k variables most assoc with outcome (by RR)
-	.jfield(x, "inferServiceIntensityVars")=as.integer(stratifyDim)
-	outputfile=paste(.jcall(x,"S","getTempDirectory"),"/",.jcall(x,"S","getFullOutputFilename"), sep="");
+	.jfield(x, "fullOutputFilename") = outfile # in tempDirectory
+	.jfield(x, "topN") = as.integer(Nmostfreq) # N most freq variables
+	.jfield(x, "k") = as.integer(k);  # k var most assoc with outcome (by RR)
+	.jfield(x, "inferServiceIntensityVars") = as.integer(stratifyDim)
+	outputfile = paste(.jcall(x, "S", "getTempDirectory"), 
+	                   "/", .jcall(x,"S","getFullOutputFilename"), sep="");
 
-	if(FullOutput==TRUE){
-		.jfield(x, "doFullOutput")=as.integer(1)
-	}else if(FullOutput==FALSE){
-		.jfield(x, "doSparseOutput")=as.integer(1)
-	}else{
+	if (FullOutput==TRUE) {
+		.jfield(x, "doFullOutput") <- as.integer(1)
+	} else if(FullOutput==FALSE) {
+		.jfield(x, "doSparseOutput") <- as.integer(1)
+	} else {
 		print("Set FullOutput=T for full output (default) or F for sparse output")
 	}
-	#ZeroCellCorrection recommended if < 150 outcome events (Rassen 2011)
-	if(ZeroCellCorrection) .jfield(x, "useOutcomeZeroCellCorrection")=as.integer(1)
+	# ZeroCellCorrection recommended if < 150 outcome events (Rassen 2011)
+	if(ZeroCellCorrection) {
+	  .jfield(x, "useOutcomeZeroCellCorrection") <- as.integer(1)
+	}
 	
 	# Get and display the object version
-	if(verbose==TRUE){
-		print(.jcall(x,"S","getDescription"))
-		print(.jcall(x,"S","getVersion"))
-		cat("Outcome type:",.jcall(x,"S","getOutcomeType"),"\n")
-		cat("FullOutputMode =",.jcall(x,"I","getDoFullOutput"),"\n")
-		cat("Outputfile =",outputfile,"\n")
-		cat("Stratify Dimensions? AKA InferServiceIntensityVars",.jcall(x,"I","getInferServiceIntensityVars"),"\n")
+	if (verbose==TRUE) {
+		print(.jcall(x, "S", "getDescription"))
+		print(.jcall(x, "S", "getVersion"))
+		cat("Outcome type:", .jcall(x, "S", "getOutcomeType"), "\n")
+		cat("FullOutputMode =", .jcall(x, "I", "getDoFullOutput"), "\n")
+		cat("Outputfile =", outputfile, "\n")
+		cat("Stratify Dimensions? AKA InferServiceIntensityVars",
+		    .jcall(x,"I","getInferServiceIntensityVars"), "\n")
 	}
 	
-	#addPatients from file does not work; use addPatientsFromBuffer instead (buffer in string)
-	#.jcall(x, "V", "addPatients", paste(baseDir, "patients.txt", sep=""));
+	# addPatients from file does not work; 
+	# use addPatientsFromBuffer instead (buffer in string)
+	# .jcall(x, "V", "addPatients", paste(baseDir, "patients.txt", sep=""));
 	.jcall(x, "V", "addPatientsFromBuffer", datainstring);
 	
-	#addDimension is required; At least 1 dimension (2 columns: id, dimension; 3rd column date is optional)
-	#create dimension files (one per empvariables) as needed for pharmacoepi.jar (addDimensions)
-	dimfile=paste(outDir,"dim.txt",sep="/")
+	# addDimension is required; 
+	# At least 1 dimension (2 columns: id, dimension; 3rd column date is optional)
+	# create dimension files (one per empvariables) 
+	# as needed for pharmacoepi.jar (addDimensions)
+	dimfile <- paste(outDir, "dim.txt", sep="/")
 	
-	for(j in 2:ncol(dimdata)){
-		write.table(dimdata[,c(1,j)],file=dimfile,sep="\t",col.names=T,row.names=F,na="",quote=F)
-		tryobj=try(.jcall(x, "V", "addDimension", colnames(dimdata)[j], dimfile),silent=F)
+	for (j in 2:ncol(dimdata)) {
+		write.table(dimdata[, c(1, j)], file=dimfile, sep="\t", col.names=T,
+		            row.names=F, na="", quote=F)
+		tryobj <- try(.jcall(x, "V", "addDimension", colnames(dimdata)[j], dimfile), 
+		           silent=F)
 	}
 
-	#check number of dimensions
-#	try(.jcall(x,"I","getNumDimensions"),silent=T)
-	cat("Number of variables considered: ",try(.jcall(x,"I","getNumDimensions"),silent=F),"\n")
+	# check number of dimensions
+  #	try(.jcall(x, "I", "getNumDimensions"), silent=T)
+	cat("Number of variables considered: ", try(.jcall(x, "I", 
+	                                                   "getNumDimensions"),
+	                                            silent=F),"\n")
 	
-	# Run the hd-PS algorithm
+	# run the hd-PS algorithm
 	print("Running hd-PS. Please wait...")
 	.jcall(x, "V", "run")
 	
-	# Read in the output cohort file generated by PE toolbox
-	tryobj2=try(read.table(outputfile, header=TRUE, fill=TRUE));
-	if(class(tryobj2)!="try-error"){
-		hdpsdata=tryobj2	
-		# Get the names of the selected variables; prepend hdpsVars$ to each
-		selectedvariables = colnames(hdpsdata)[-1]
-		list(jobj=x,hdpsdata=hdpsdata,selectedvariables=selectedvariables)
-	}else{
-		list(jobj=x,hdpsdata=NULL,selectedvariables=NULL)
+	# read in the output cohort file generated by PE toolbox
+	tryobj2 <- try(read.table(outputfile, header=TRUE, fill=TRUE));
+	if (class(tryobj2)!="try-error") {
+		hdpsdata <- tryobj2	
+		# get the names of the selected variables; prepend hdpsVars$ to each
+		selectedvariables <- colnames(hdpsdata)[-1]
+		list(jobj=x, hdpsdata=hdpsdata, selectedvariables=selectedvariables)
+	} else {
+		list(jobj=x, hdpsdata=NULL, selectedvariables=NULL)
 	}
 }
 
 
-#Match by logit(PS) scores using pharmacoepi.jar
-#inputs: cohort should contain 3 columns (id, exposed, ps)
-#possible matching modes:	nn=NEAREST_NEIGHBOR,
-#							balanced_nn=BALANCED_NEAREST_NEIGHBOR, 
-#							GREEDY_DIGIT, GREEDY_CALIPER (default), GREEDY, COMPLETE
-#best to use scaled logit PS values in final logistic model
-hdpsMatch<-function(data,ps,mode="GREEDY_CALIPER",k=1,caliper=0.05,output_matchfile="matches.txt",
-		fixedratio=T,parallelmode=F,ngroups=as.character(2)){
-	#input matrix must contain 3 columns (id, exposed, ps)
-	cohort=cbind(data,ps)
-	colnames(cohort)[3]="ps"
+############# HDPS MATCHING #############
+hdpsMatch <- function(data, ps, mode="GREEDY_CALIPER", k=1, caliper=0.05,
+                      output_matchfile="matches.txt", fixedratio=T, 
+                      parallelmode=F, ngroups=as.character(2)) {
+  # Match by logit(PS) scores using pharmacoepi.jar
+  # Inputs: 
+  # - cohort should contain 3 columns (id, exposed, ps)
+  # - possible matching modes:	nn=NEAREST_NEIGHBOR,
+  #							balanced_nn=BALANCED_NEAREST_NEIGHBOR, 
+  #							GREEDY_DIGIT, GREEDY_CALIPER (default), GREEDY, COMPLETE
+  # Best to use scaled logit PS values in final logistic model
+	cohort <- cbind(data, ps)
+	colnames(cohort)[3] <- "ps"
 	
-	#instantiate
-	if(exists("m")) rm(m)
+	# instantiate m
+	if (exists("m")) rm("m")
+	m <- .jnull("org.drugepi.match.Match")
 	m <- .jnew("org.drugepi.match.Match");
-	.jcall(m, "V", "initMatch",mode, ngroups)    #nn=nearest neighbor; 2 groups
+	.jcall(m, "V", "initMatch", mode, ngroups)  # nn = nearest neighbor; 2 groups
+  
+	# set parameters for matching (java)
+	# variable-ratio mode otherwise
+	if (fixedratio) {
+	  .jfield(m, "fixedRatio") <- as.integer(1)
+	} else {
+	  .jfield(m, "fixedRatio") <- as.integer(0)
+	}
+	.jfield(m, "matchRatio") <- as.integer(k) # number of nearest neighbors
 	
-	###set parameters for matching (java)
-	#variable-ratio mode otherwise
-	if (fixedratio) .jfield(m,"fixedRatio")=as.integer(1) else .jfield(m,"fixedRatio")=as.integer(0)
-	.jfield(m, "matchRatio")=as.integer(k) #number of nearest neighbors
-	
-	#parallelMatchingMode only if caliper is not set
-	if(parallelmode==TRUE && is.na(caliper)){
-		.jfield(m, "parallelMatchingMode")=as.integer(1)
-	}else if(parallelmode==TRUE && !is.na(caliper)){
+	# parallelMatchingMode only if caliper is not set
+	if (parallelmode==TRUE && is.na(caliper)) {
+		.jfield(m, "parallelMatchingMode") <- as.integer(1)
+	} else if (parallelmode==TRUE && !is.na(caliper)) {
 		print("If caliper is set, parallelMatchingMode will not be used")
-		.jfield(m, "parallelMatchingMode")=as.integer(0) 
-	}else{.jfield(m, "parallelMatchingMode")=as.integer(0)}
+		.jfield(m, "parallelMatchingMode") <- as.integer(0) 
+	} else { .jfield(m, "parallelMatchingMode") <- as.integer(0) }
 	if(is.numeric(caliper)) .jfield(m, "caliper")=as.double(caliper)
+
+	.jfield(m, "outfilePath") <- output_matchfile
+	if (file.exists(output_matchfile)) file.remove(output_matchfile) 
 	
-	.jfield(m, "outfilePath") = output_matchfile
-	if(file.exists(output_matchfile)) file.remove(output_matchfile) 
-	
-	.jcall(m, "V", "addMatchGroup", "1"); #define treatment group
-	.jcall(m, "V", "addMatchGroup", "0"); #define control group
-	##########
-	
-	#enter data into match java object
+	.jcall(m, "V", "addMatchGroup", "1"); # define treatment group
+	.jcall(m, "V", "addMatchGroup", "0"); # define control group
+
+	# enter data into match java object
 	match_header <- paste(colnames(cohort), collapse="\t")
-	match_data <- paste(paste(cohort[,1],cohort[,2],cohort[,3],sep="\t"),collapse="\n")
-	.jcall(m, "V", "addPatientsFromBuffer", paste(match_header, match_data, sep="\n"))
-	
-	#run matching.class
-	cat("Pharmacoepi Toolbox",m$version, "\n") #print version of pharmacoepi.jar
+	match_data <- paste(paste(cohort[,1], cohort[,2], 
+	                          cohort[,3], sep="\t"), collapse="\n")
+
+	.jcall(m, "V", "addPatientsFromBuffer", paste(match_header, 
+	                                              match_data, sep="\n"));
+  
+	# run matching.class
+	cat("Pharmacoepi Toolbox", .jfield(m, name="version"), "\n")
 	tryCatch( .jcall(m, "V", "run"), 
 			NumberFormatException = function(e) {
 				e$jobj$printStackTrace() 
 			}
 	)
-	
-	#output matches.txt
-	matches <- read.table(output_matchfile, header=TRUE, sep="\t")
-	matchedsets=as.matrix(xtabs(pat_id~ set_num+group_indicator,data=matches))
-	matched_ps=as.matrix(xtabs(ps~ set_num+group_indicator,data=matches))
-	#convert xtab to matrix
-	attr(matchedsets,"class")=NULL
-	attr(matchedsets,"call")=NULL
-	attr(matched_ps,"class")=NULL
-	attr(matched_ps,"call")=NULL
 
-	list(matchedsets=matchedsets,matches=matches,matched_ps=matched_ps,mobj=m)
+	# output matches.txt
+	matches <- read.table(output_matchfile, header=TRUE, sep="\t");
+  matches$ps <- as.numeric(matches$ps)
+  matchedsets <- as.matrix(xtabs(pat_id~set_num+group_indicator, data=matches))
+  matched_ps <- as.matrix(xtabs(ps~set_num+group_indicator, data=matches))
+  # convert xtab to matrix
+  attr(matchedsets, "class") = NULL
+  attr(matchedsets, "call") = NULL
+  attr(matched_ps, "class") = NULL
+  attr(matched_ps, "call") = NULL
+
+  list(matchedsets=matchedsets, matches=matches, matched_ps=matched_ps, mobj=m)
 }
 
 
-############ diagnostics for matching ####################
-#for 1:1 matching only
-psDiag<-function(m,ps,exposurevec,outfile=NULL,verbose=TRUE,printvalues=TRUE,ylim=NULL){
-	
-	#conditions for m object
-	if(sum(grepl("^mobj$",names(m)))){ #for hdps object
-		trtedID=as.character(m$matchedsets[,"1"]) #patient id in char
-		ctrlID=as.character(m$matchedsets[,"0"])
-	}else if (sum(grepl("^index.control$",names(m)))){ #for Matching obj
-		trtedID=m$index.treated #rownumbers, not patient id
-		ctrlID=m$index.control
+############# MATCHING DIAGNOSTICS #############
+psDiag <- function(m, ps, exposurevec, outfile=NULL, verbose=TRUE, 
+                 printvalues=TRUE, ylim=NULL) {
+	# Note: this works for 1:1 matching only
+	# conditions for matching object
+	if (sum(grepl("^mobj$",names(m)))) { # for hdps object
+		trtedID <- as.character(m$matchedsets[, "1"]) # patient id in char
+		ctrlID <- as.character(m$matchedsets[, "0"])
+	} else if (sum(grepl("^index.control$", names(m)))){ # for matching obj
+		trtedID <- m$index.treated # /!\ rownumbers, not patient id
+		ctrlID <- m$index.control
 	}
 	
-	trted=ps[trtedID]
-	ctrl=ps[ctrlID]
+	trted <- ps[trtedID]
+	ctrl <- ps[ctrlID]
 
-	#compare distributions
-	ks=ks.test(trted,ctrl) #kolmogorov
-	kl=KLdiv(cbind(trted,ctrl)) #Kullback-Leibler Divergence
+	# compare distributions
+	ks <- ks.test(trted, ctrl) # kolmogorov
+	kl <- KLdiv(cbind(trted, ctrl)) # Kullback-Leibler Divergence
   
-	#calculate c-statistic (aka AUC) - proxy for glm fit
-	#matchedID=which(names(glm$fitted) %in% m$matches$pat_id)
-	predobj=prediction(ps,exposurevec)
-	perf=performance(predobj,"tpr", "fpr")
-	cstat=performance(predobj,"auc")@y.values[[1]]
+	# calculate c-statistic (aka AUC) - proxy for glm fit
+	# matchedID <- which(names(glm$fitted) %in% m$matches$pat_id)
+	predobj <- prediction(ps, exposurevec)
+	perf <- performance(predobj, "tpr", "fpr")
+	cstat <- performance(predobj, "auc")@y.values[[1]]
 	
-	#summarize and return results
-	ksval=ks$p.value
-	klval=kl[1,2]
-	results=c(ksval,klval,cstat)
-	names(results)=c("KS","KL","Cstat")
+	# summarize and return results
+	ksval <- ks$p.value
+	klval <- kl[1,2]
+	results <- c(ksval,klval,cstat)
+	names(results) <- c("KS", "KL", "Cstat")
   
-  if(verbose==TRUE){
+  if (verbose==TRUE) {
     print(results)
-    
-  	#overlay pdfs
-  	#before matching
-  	if(!is.null(outfile)) pdf(file=outfile,width=7,height=11)  #save plots
-    	par(mfrow=c(2,2),pty="s") #for pdf and c-stat
-    	if(is.null(ylim)){
-        plot(density(ps[exposurevec==1],na.rm=T),col="red",lwd=2,xlim=0:1,xlab="PS", main="PS distributions (before matching)")
-    	}else if(ylim>0){
-    	  plot(density(ps[exposurevec==1],na.rm=T),col="red",lwd=2,xlim=0:1,ylim=c(0,ylim),xlab="PS", main="PS distributions (before matching)")
-    	}else{
-        stop("ylim must be a number more than 0 or set to NULL for automatic ymax value")
+  	# overlay pdfs
+  	# before matching
+  	if (!is.null(outfile)) pdf(file=outfile, width=7, height=11)  # save plots
+    	par(mfrow=c(2,2), pty="s") # for pdf and c-stat
+    	if (is.null(ylim)) {
+        plot(density(ps[exposurevec==1], na.rm=T), col="red", lwd=2, xlim=0:1,
+             xlab="PS", main="PS distributions (before matching)")
+    	} else if(ylim>0) {
+    	  plot(density(ps[exposurevec==1], na.rm=T), col="red", lwd=2, xlim=0:1,
+    	       ylim=c(0,ylim), xlab="PS", 
+    	       main="PS distributions (before matching)")
+    	} else {
+        stop(paste("ylim must be a number more than 0 or set to NULL for ", 
+                   "automatic ymax value"))
     	}
-    	legend("topright",pch="",lty=1,col=c(1,2),c("control","exposed"),bty="n",cex=.8)
-    	points(density(ps[exposurevec==0],na.rm=T),cex=0.1)
-    	#after matching
-    	plot(density(trted,na.rm=T),xlim=0:1,xlab="PS",col="red",lwd=2,main="PS distributions (after matching)")
-    	legend("topright",pch="",lty=1,col=c(1,2),c("control","exposed"),bty="n",cex=.8)
-    	points(density(ctrl,na.rm=T),cex=0.1)
-    	if(ksval>0.05) printpvalue=round(ksval,2) else if(ksval<=0.05) printpvalue=round(ksval,3) 
-      if(printvalues==TRUE) legend("center",c(paste("Kolmogorov p-value: ",printpvalue),paste("KL divergence: ",round(klval,2))),bty="n",cex=0.7,xjust=1)
+    	legend("topright", pch="", lty=1, col=c(1,2), c("control","exposed"), bty="n", cex=.8)
+    	points(density(ps[exposurevec==0], na.rm=T), cex=0.1)
+    	# after matching
+    	plot(density(trted,na.rm=T), xlim=0:1, xlab="PS", col="red", lwd=2, 
+    	     main <- "PS distributions (after matching)")
+    	legend("topright", pch="", lty=1, col=c(1,2), c("control","exposed"),
+    	       bty="n", cex=.8)
+    	points(density(ctrl,na.rm=T), cex=0.1)
+    	if(ksval>0.05) {
+    	  printpvalue <- round(ksval,2)
+    	} else if (ksval<=0.05) {
+    	  printpvalue <- round(ksval,3) 
+    	}
+      if(printvalues==TRUE) {
+        legend("center", 
+               c(paste("Kolmogorov p-value: ", printpvalue),
+                 paste("KL divergence: ",round(klval,2))),
+               bty="n",cex=0.7,xjust=1)
+      }
     	
-    	qqplot(trted,ctrl,asp=1,xlim=0:1,ylim=0:1,
-    			pch=1,cex=.8,xlab="Exposed",ylab="Control",main="QQ plot")
-    	abline(0,1)
+    	qqplot(trted, ctrl, asp=1, xlim=0:1, ylim=0:1, pch=1, cex=.8,
+    	       xlab="Exposed", ylab="Control", main="QQ plot")
+    	abline(0, 1)
     	
-    	plot(perf,xlab="1-Specificity",ylab="Sensitivity",
-    			asp=1,xlim=0:1,ylim=0:1,main="C-statistic")
-    	abline(0,1,lty=2)
-    	legend("bottomright",paste("C-statistic: ", round(cstat,2)),cex=0.9,bty="n")
-    if(!is.null(outfile)) dev.off()
+    	plot(perf, xlab="1-Specificity", ylab="Sensitivity", asp=1, xlim=0:1,
+    	     ylim=0:1, main="C-statistic")
+    	abline(0,1, lty=2)
+    	legend("bottomright", paste("C-statistic: ", round(cstat,2)), 
+    	       cex=0.9, bty="n")
+    if (!is.null(outfile)) dev.off()
   }
-	list(results=results,ps=cbind(trted,ctrl))
+	list(results=results, ps=cbind(trted, ctrl))
 }
 
 
-########### get standardized mean difference (aka Cohen's d) #####################
-smd<-function(data,exposed=exposed,variable=outcome,categorical=FALSE,verbose=TRUE){
-  if(categorical==FALSE){ #continuous variables
-    ngrps=table(data[,exposed],useNA="ifany")
-    means=tapply(data[,variable],data[,exposed],mean,na.rm=T)
-  	sds=tapply(data[,variable],data[,exposed],sd,na.rm=T) #sample sd (uses n-1)
-  	spooled=sqrt(((ngrps[1]-1)*sds[1]^2+(ngrps[2]-2)*sds[2]^2)/(ngrps[1]+ngrps[2]-2))
-    smdval=(means[2]-means[1])/spooled
-  }else{  #categorical variables
-    ns=table(data[data[,exposed] %in% c(0,1),c(variable,exposed)],useNA="ifany")
-    pctTab=prop.table(ns,2)
-    sds=t(apply(pctTab,1,function(x) c(x[1]*(1-x[1]),x[2]*(1-x[2]))))
-    spooled=apply(sds,1,function(x) sqrt(sum(x)/2))
-    smdval=((pctTab[,2]-pctTab[,1])/spooled)[2]
+############# SMD ############# 
+smd <- function(data, exposed=exposed, variable=outcome, categorical=FALSE, 
+              verbose=TRUE){
+  # Computes standardized means difference
+  if (categorical==FALSE) {  # continuous variables
+    ngrps <- table(data[, exposed], useNA="ifany")
+    means <- tapply(data[, variable], data[,exposed], mean, na.rm=T)
+  	sds <- tapply(data[, variable], data[,exposed], sd, na.rm=T) # sample sd
+  	spooled <- (ngrps[1]-1)*sds[1]^2 + (ngrps[2]-2)*sds[2]^2
+  	spooled <- sqrt (spooled / (ngrps[1]+ngrps[2]-2))
+    smdval <- (means[2] - means[1]) / spooled
+  } else {  # categorical variables
+    ns <- table(data[data[, exposed] %in% c(0,1), c(variable, exposed)], 
+                useNA="ifany")
+    pctTab <- prop.table(ns, 2)
+    sds <- t(apply(pctTab, 1, function(x) c(x[1]*(1-x[1]), x[2]*(1-x[2]))))
+    spooled <- apply(sds, 1, function(x) sqrt(sum(x)/2))
+    smdval <- ((pctTab[, 2]-pctTab[, 1]) / spooled)[2]
   }
   
-  if(verbose==TRUE){
+  if (verbose==TRUE) {
     print("Group size")
-    if(categorical==FALSE){  #continuous variables
+    if (categorical==FALSE) {  # continuous variables
       print(ngrps)
-      cat("\nMean: ",means,"\n")
-    }else{ #categorical variables
+      cat("\nMean: ", means, "\n")
+    } else { # categorical variables
       print(ns)
       cat("\nProportion: ")
       print(pctTab)
     }
     cat("Sample standard deviation: \n")
     print(sds)
-    cat("Pooled standard deviation:",spooled,"\n")
-    cat("SMD:",smdval,"\n")
-  }  #end of verbose
+    cat("Pooled standard deviation:", spooled, "\n")
+    cat("SMD:", smdval, "\n")
+  }  # end of verbose
 	return(smdval)
 }
 
 
-
-###### get OR #################
-getOR<-function(glmmod,verbose=TRUE){
-	
-	OR=exp(glmmod$coefficients[exposed])
-	ORint=suppressMessages(exp(confint(glmmod)[exposed,]))
-	if(verbose==TRUE) cat(OR,"[",ORint,"]\n")
-	list(OR=OR,ORint=ORint)
-	
+############# GET OR ############# 
+getOR <- function(model, verbose=TRUE){
+	OR <- exp(model$coefficients[exposed])
+	ORint <- suppressMessages(exp(confint(model)[exposed,]))
+	if (verbose==TRUE) {
+	  cat(OR,"[",ORint,"]\n")
+	}
+	list(OR=OR, ORint=ORint)
 }
 
 
-################# match by ps, similarities or matchedIDs; perform cLogit; output results and matchedIDs #################
-# 1. Enter ps, similarities or matchedIDs
-# 2. Perform logit tranformation if required (set logitFlag=T is ps is not yet logit)
-# 3. Match by ps, similarity or pre-entered matches (single vector of matching IDs, names of vector are the corresponding matching IDs)
-# 4. Performs cLogit to matched sets
-# 5. Outputs results of cLogit, matchedID
-extractResults<-function(ps,exposurevec,data,fmod=NULL,id=id,exposed=exposed,outcome=outcome,
-                         logitFlag=TRUE,outfile=NULL,verbose=TRUE,printvalues=TRUE,ylim=NULL){
-	if(is.null(fmod)) fmod=paste(outcome,exposed,sep=" ~ ")
+############# EXTRACT RESULTS #############
+extractResults<-function(ps, exposurevec, data, fmod=NULL, id=id, 
+                         exposed=exposed, outcome=outcome, logitFlag=TRUE, 
+                         outfile=NULL, verbose=TRUE, 
+                         printvalues=TRUE, ylim=NULL, continuous=FALSE){
+  # Match by ps, similarities or matchedIDs, perform cLogit.
+  # Outputs results and matchedIDs.
+  # 1. Enter ps, similarities or matchedIDs
+  # 2. Perform logit tranformation if required (set logitFlag=T is ps is 
+  # not yet logit)
+  # 3. Match by ps, similarity or pre-entered matches (single vector 
+  # of matching IDs, names of vector are the corresponding matching IDs)
+  # 4. Performs cLogit to matched sets
+  # 5. Outputs results of cLogit, matchedID
+  
+  if (is.null(fmod)) {
+    fmod <- paste(outcome, exposed, sep=" ~ ")
+  } 
 	
-  #If using propensity scores (i.e. ps is vector of ps, not list object)
+  # If using propensity scores (i.e. ps is vector of ps, not list object)
   if(!is.list(ps)){
-  	#Define optimal caliper
-  	#using Austin 2011 recommendation of 0.2*sd(logit(PS)) - assumes normality after transformation
-  	#Rosenbaum recommends 0.25sd(PS) in his book
-  	#the two converges if ps is small
-  	### Downsample by matching (calls Java org.drugepi.match.Match)####
-  	#create cohort data matrix: should contain 3 columns (id, exposed, ps)
-  	if(logitFlag==TRUE){
-        ps=logit(ps)
+  	# Define optimal caliper
+  	# using Austin 2011 recommendation of 0.2*sd(logit(PS))
+  	# Rosenbaum recommends 0.25sd(PS) in his book
+  	# (the two converges if ps is small)
+  	# Downsample by matching (calls Java org.drugepi.match.Match)
+  	# create cohort data matrix: should contain 3 columns (id, exposed, ps)
+    
+  	if (logitFlag == TRUE) {
+        ps <- logit(ps)
   	}
-    #try to use PS as logit form
-  	optcaliper=0.2*sd(ps,na.rm=T)
-  	matchedsets=hdpsMatch(data[,c(id,exposed)],ps,mode="GREEDY_CALIPER",k=1,caliper=optcaliper)
+    
+    # try to use PS as logit form
+  	optcaliper <- 0.2 * sd(ps, na.rm=T)
+  	matchedsets <- hdpsMatch(data[,c(id,exposed)], ps, mode="GREEDY_CALIPER",
+  	                         k=1, caliper=optcaliper)
   		
-  	#diagnostics for matching
-  	if(logitFlag==TRUE){
-      diagnosticResults=psDiag(matchedsets,unlogit(ps),exposurevec,outfile=outfile,verbose=verbose,printvalues=printvalues,ylim=ylim)
-    }else if(logitFlag==FALSE){
-      diagnosticResults=psDiag(matchedsets,ps,exposurevec,outfile=outfile,verbose=verbose,printvalues=printvalues,ylim=ylim)      
-    }else{
+  	# diagnostics for matching
+  	if (logitFlag==TRUE) {
+      diagnosticResults <- psDiag(matchedsets, unlogit(ps), 
+                                  exposurevec, outfile=outfile, 
+                                  verbose=verbose, printvalues=printvalues, 
+                                  ylim=ylim)
+    } else if (logitFlag==FALSE) {
+      diagnosticResults <- psDiag(matchedsets, ps, exposurevec, outfile=outfile, 
+                                 verbose=verbose, printvalues=printvalues,
+                                 ylim=ylim)      
+    } else {
       stop("logitFlag must be TRUE/FALSE. Set to TRUE to logit transform PS")
     }
-  	#get matched data
-  	matcheddata=merge(data,matchedsets$matches[,c("pat_id","set_num","ps")],by.x=id,by.y="pat_id",all.y=T,sort=F)
-  	colnames(matcheddata)[ncol(matcheddata)]="ps.added"
+  	
+  	# get matched data
+  	matcheddata <- merge(data, 
+  	                     matchedsets$matches[, c("pat_id", "set_num", "ps")],
+  	                     by.x=id, by.y="pat_id", all.y=T, sort=F)
+  	colnames(matcheddata)[ncol(matcheddata)] <- "ps.added"
     
-  	#incorporate PS by covariate adjusment (use all patients) - not possible for similarities
-    #ps.added will be in logit form if logitFlag=T
-  	temp=cbind(data,scale(ps))
-  	colnames(temp)[ncol(temp)]="ps.added"
-  	glmAdjMod=glm(paste(fmod,"+ ps.added"),data=temp,family="binomial")
-  	ORadj=getOR(glmAdjMod,verbose=FALSE)
-  	coeff_adj=coef(glmAdjMod)[exposed]
-  	se_adj=summary(glmAdjMod)$coefficients[exposed,2]
+  	# incorporate PS by covariate adjusment (use all patients)
+  	# not possible for similarities
+    # ps.added will be in logit form if logitFlag=T
+  	temp <- cbind(data, scale(ps))
+  	colnames(temp)[ncol(temp)] <- "ps.added"
+  	if (!continuous) {
+  	  glmAdjMod <- glm(paste(fmod, "+ ps.added"), data=temp, family="binomial")
+  	  ORadj <- getOR(glmAdjMod, verbose=FALSE)
+  	  coeff_adj <- coef(glmAdjMod)[exposed]
+  	  se_adj <- summary(glmAdjMod)$coefficients[exposed, 2]
+  	}
+  	else {
+  	  lmAdjMod <- lm(formula=paste(fmod, "+ ps.added"), data=temp)
+  	  ORadj <- getOR(lmAdjMod, verbose=FALSE)
+  	  coeff_adj <- coef(lmAdjMod)[exposed]
+  	  se_adj <- summary(lmAdjMod)$coefficients[exposed, 2]
+  	}
   
-  #If using similarity, then ps is list object from similarity analysis 
-  }else if("matchedset" %in% names(ps) & !is.null(ps$matchedset)){
-    #manipulate matchedset into the right format
-    temp=cbind(c(names(ps$matchedset),ps$matchedset),set_num=rep(1:length(ps$matchedset),2))
-    mode(temp)="numeric"
-    rownames(temp)=NULL
-    colnames(temp)=c("pat_id","set_num")
-    matcheddata=merge(data,temp,by.x=id,by.y="pat_id",all.y=T,sort=F)
+  # if using similarity, then ps is list object from similarity analysis 
+  } else if ("matchedset" %in% names(ps) & !is.null(ps$matchedset)) {
+    # manipulate matchedset into the right format
+    temp <- cbind(c(names(ps$matchedset), ps$matchedset), 
+                  set_num=rep(1:length(ps$matchedset), 2))
+    mode(temp) <- "numeric"
+    rownames(temp) <- NULL
+    colnames(temp) <- c("pat_id", "set_num")
+    matcheddata <- merge(data, temp, by.x=id, by.y="pat_id", all.y=T, sort=F)
     
-    #set irrelevant result fields to NA
-    diagnosticResults=list(results=c(KS=NA,KL=NA,Cstat=NA),ps=NULL)
-    ORadj=list(NA,NA,NA)
-    coeff_adj=NA
-    se_adj=NA
-  }else{   #not ps or similarity
-    print("Skipped: ps cannot be NULL")
-    results=rep(NA,16)
-    names(results)=c("n0","n1","KS","KL","Cstat","SMD","ORadj","ORlow_adj","ORupp_adj","coeff_adj","se_adj",
-                                                           "ORmatched","ORlow_matched","ORupp_matched","coeff_matched","se_matched")
-    list(results=results,matchedID=matcheddata[,id])
+    # set irrelevant result fields to NA
+    diagnosticResults <- list(results=c(KS=NA, KL=NA, Cstat=NA), ps=NULL)
+    ORadj <- list(NA, NA, NA)
+    coeff_adj <- NA
+    se_adj <- NA
+    
+  } else {  # not ps or similarity
+    print("Skipped: PS cannot be NULL")
+    results <- rep(NA, 16)
+    names(results) <- c("n0", "n1", "KS", "KL", "Cstat", "SMD", "ORadj",
+                        "ORlow_adj", "ORupp_adj", "coeff_adj", "se_adj",
+                        "ORmatched", "ORlow_matched", "ORupp_matched",
+                        "coeff_matched", "se_matched")
+    list(results=results, matchedID=matcheddata[,id])
   }
-	#get SMD
-	Smd=smd(matcheddata,exposed=exposed,variable=outcome,verbose=verbose,categorical=TRUE)
+  
+	# get SMD
+	Smd <- smd(matcheddata, exposed=exposed, variable=outcome, verbose=verbose, 
+	           categorical=TRUE)
 	
-	#incorporate PS by matching (downsamples)
-	tryobj3=try(clogistic(fmod,strata=set_num, data=matcheddata))
-	if(class(tryobj3)!="try-error")   glmCMod=tryobj3 else glmCMod=NULL
-  if(!is.null(glmCMod)){  #if clogit is possible
-	  ORmatched=getOR(glmCMod,verbose=FALSE)
-  	coeff_matched=coef(glmCMod)[exposed]
-	  se_matched=sqrt(diag(glmCMod$var)[exposed])
+  	# incorporate PS by matching (downsamples)
+	  if (!continuous) {
+    	tryobj3 <- try(clogistic(fmod, strata=set_num, data=matcheddata))
+    	if (class(tryobj3)!="try-error") model=tryobj3 else model=NULL
+	  } else {
+	    model = lm(fmod, data=matcheddata)
+	  }
+    if (!is.null(model)) {  # if clogit is possible
+  	  ORmatched <- getOR(model, verbose=FALSE)
+    	coeff_matched <- coef(model)[exposed]
+  	  se_matched <- sqrt(diag(model$var)[exposed])
 	
-  	#extract results of interest
-  	results=c(n0=nrow(data),n1=nrow(matcheddata),diagnosticResults$results,Smd,
-              unlist(ORadj),coeff_adj,se_adj,
-              unlist(ORmatched),coeff_matched,se_matched)
-  	names(results)[(length(results)-10):length(results)]=c("SMD","ORadj","ORlow_adj","ORupp_adj","coeff_adj","se_adj",
-                                                           "ORmatched","ORlow_matched","ORupp_matched","coeff_matched","se_matched")
-  }else{  #if clogit is not possible
+  	# extract results of interest
+  	results <- c(n0=nrow(data), n1=nrow(matcheddata), diagnosticResults$results, 
+  	             Smd, unlist(ORadj), coeff_adj, se_adj,
+                 unlist(ORmatched), coeff_matched, se_matched)
+    result.names = c("SMD", "ORadj", "ORlow_adj", "ORupp_adj", "coeff_adj", 
+                     "se_adj", "ORmatched", "ORlow_matched", "ORupp_matched",
+                     "coeff_matched","se_matched")
+  	names(results)[(length(results)-10):length(results)] <- result.names
+  } else {  # if clogit is not possible
     print("Skipped: clogit model is NULL")
-    results=c(n0=nrow(data),n1=nrow(matcheddata),diagnosticResults$results,Smd,
-              unlist(ORadj),coeff_adj,se_adj,
-              rep(NA,5))
-    names(results)=c("n0","n1","KS","KL","Cstat","SMD","ORadj","ORlow_adj","ORupp_adj","coeff_adj","se_adj",
-                     "ORmatched","ORlow_matched","ORupp_matched","coeff_matched","se_matched")
-    list(results=results,matchedID=matcheddata[,id])
+    results=c(n0=nrow(data), n1=nrow(matcheddata), diagnosticResults$results,
+              Smd, unlist(ORadj), coeff_adj, se_adj, rep(NA,5))
+    names(results) = c("n0", "n1", "KS", "KL", "Cstat", "SMD", "ORadj",
+                       "ORlow_adj", "ORupp_adj","coeff_adj","se_adj", 
+                       "ORmatched","ORlow_matched","ORupp_matched", 
+                       "coeff_matched","se_matched")
+    list(results=results, matchedID=matcheddata[,id])
   }
-  #ps_hd=diagnosticResults$ps
-	if(verbose==TRUE) print(round(results,3))
+	
+  # ps_hd = diagnosticResults$ps
+	if (verbose==TRUE) {
+	  print(round(results, 3))
+	}
   
-	list(results=results,matchedID=matcheddata[,id])
-	#list(results=results,ps=ps_hd)
+	list(results=results, matchedID=matcheddata[,id])
+	# list(results=results,ps=ps_hd)
 }
 
-
-
-##### extract results for random samples (uses glm logit instead of clogit)   #####################
-# 1. Match by matchedIDs (single vector of matching IDs, names of vector are the corresponding matching IDs)
-# 2. Performs logit reg (glm) - ignores matched sets (assumes iid)
-# 3. Outputs results of logit, matchedID
-extractResultsRdm<-function(matchedID,data,fmod=NULL,id=id,exposed=exposed,outcome=outcome,verbose=TRUE){
-  if(is.null(fmod)) fmod=paste(outcome,exposed,sep=" ~ ")
+############# EXTRACT RESULTS - RANDOM #############
+extractResultsRdm <- function(matchedID, data, fmod=NULL, id=id,
+                              continuous=FALSE, exposed=exposed, 
+                              outcome=outcome, verbose=TRUE){
+  # Extract results for random samples (uses glm logit instead of clogit)
+  # 1. Match by matchedIDs (single vector of matching IDs, names 
+  # of vector are the corresponding matching IDs)
+  # 2. Performs logit reg (glm) - ignores matched sets (assumes iid)
+  # 3. Outputs results of logit, matchedID  
   
-  matcheddata=data[data[,id] %in% c(matchedID),]
+  if (is.null(fmod)) {
+    fmod <- paste(outcome, exposed, sep=" ~ ")
+  }
+  matcheddata <- data[data[, id] %in% c(matchedID),]
   
-  #set irrelevant result fields to NA
-  diagnosticResults=list(results=c(KS=NA,KL=NA,Cstat=NA),ps=NULL)
-  ORadj=list(NA,NA,NA)
-  coeff_adj=NA
-  se_adj=NA
-  #get SMD
-  Smd=smd(matcheddata,exposed=exposed,variable=outcome,verbose=verbose,categorical=TRUE)
+  # set irrelevant result fields to NA
+  diagnosticResults <- list(results=c(KS=NA,KL=NA,Cstat=NA),ps=NULL)
+  ORadj <- list(NA,NA,NA)
+  coeff_adj <- NA
+  se_adj <- NA
   
-  #incorporate PS by matching (downsamples)
-  tryobj3=try(glm(fmod,data=matcheddata,family="binomial"))
-  if(class(tryobj3)[1]!="try-error")   glmMod=tryobj3 else glmMod=NULL
-  if(!is.null(glmMod)){  #if logit is possible
-    ORmatched=getOR(glmMod,verbose=FALSE)
-    coeff_matched=coef(glmMod)[exposed]
-    se_matched=summary(glmMod)$coefficients[exposed,"Std. Error"]
+  # get SMD
+  Smd <- smd(matcheddata, exposed=exposed, variable=outcome, verbose=verbose,
+             categorical=TRUE)
+  
+  # incorporate PS by matching (downsamples)
+  if (!continuous) {
+    tryobj3 <- try(glm(fmod, data=matcheddata, family="binomial"))
+    if (class(tryobj3)[1]!="try-error")   model <- tryobj3 else model <- NULL
+  } else {
+    model <- lm(fmod, data=matcheddata)
+  }
+  if (!is.null(model)) {  #if logit is possible
+    ORmatched <- getOR(model, verbose=FALSE)
+    coeff_matched <- coef(model)[exposed]
+    se_matched <- summary(model)$coefficients[exposed, "Std. Error"]
     
-    #extract results of interest
-    results=c(n0=nrow(data),n1=nrow(matcheddata),diagnosticResults$results,Smd,
-              unlist(ORadj),coeff_adj,se_adj,
-              unlist(ORmatched),coeff_matched,se_matched)
-    names(results)[(length(results)-10):length(results)]=c("SMD","ORadj","ORlow_adj","ORupp_adj","coeff_adj","se_adj",
-                                                           "ORmatched","ORlow_matched","ORupp_matched","coeff_matched","se_matched")
+    # extract results of interest
+    results <- c(n0=nrow(data), n1=nrow(matcheddata), 
+                 diagnosticResults$results, Smd, unlist(ORadj), 
+                 coeff_adj, se_adj, unlist(ORmatched),coeff_matched,se_matched)
+    results.name <- c("SMD", "ORadj", "ORlow_adj", "ORupp_adj", "coeff_adj",
+                      "se_adj", "ORmatched", "ORlow_matched", "ORupp_matched",
+                      "coeff_matched", "se_matched")
+    names(results)[(length(results)-10):length(results)] <- results.name
   } 
-  if(verbose==TRUE) print(round(results,3))
-  list(results=results,matchedID=c(matchedID))
-  #list(results=results,ps=ps_hd)
+  
+  if(verbose==TRUE) print(round(results, 3))
+  list(results=results, matchedID=c(matchedID))
+  # list(results=results, ps=ps_hd)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-############## calculate similarities
-similarity<-function(x,y=NULL,method="jaccard"){
-  xymat=tcrossprod(x,y)
-  x2sum=diag(tcrossprod(x,x))
-  if(!is.null(y)) y2sum=diag(tcrossprod(y,y)) else y2sum=x2sum
-  s=matrix(nrow=length(y2sum),ncol=nrow(x))
-  if(method=="jaccard"){
-    for(i in 1:nrow(x)) for(j in 1:nrow(y)) s[j,i]=xymat[i,j]/(x2sum[i]+y2sum[j]-xymat[i,j])
-  }else if(method=="dice"){
-    for(i in 1:nrow(x)) for(j in 1:nrow(y)) s[j,i]=2*xymat[i,j]/(x2sum[i]+y2sum[j])
-  }else if(method=="cosine"){
-    for(i in 1:nrow(x)) for(j in 1:nrow(y)) s[j,i]=xymat[i,j]/sqrt(x2sum[i]*y2sum[j])
-  }else if(method %in% c("pearson","spearman","kendall")){
-    s=cor(t(y),t(x),method=method)
-  }else{
-    stop("Error: enter a valid type of similarity (jaccard, dice ,cosine, pearson, spearman, kendall)!")
+############# SIMILARITY ############# 
+similarity <- function(x, y=NULL, method="jaccard"){
+  # Calculate similarities
+  xymat <- tcrossprod(x, y)
+  x2sum <- diag(tcrossprod(x, x))
+  if(!is.null(y)) y2sum <- diag(tcrossprod(y, y)) else y2sum <- x2sum
+  s <- matrix(nrow=length(y2sum), ncol=nrow(x))
+  
+  if (method=="jaccard") {
+    for(i in 1:nrow(x)) for(j in 1:nrow(y)) s[j,i] <- xymat[i,j]/(x2sum[i]+y2sum[j]-xymat[i,j])
+  } else if(method=="dice") {
+    for(i in 1:nrow(x)) for(j in 1:nrow(y)) s[j,i] <- 2*xymat[i,j]/(x2sum[i]+y2sum[j])
+  } else if(method=="cosine") {
+    for(i in 1:nrow(x)) for(j in 1:nrow(y)) s[j,i] <- xymat[i,j]/sqrt(x2sum[i]*y2sum[j])
+  } else if(method %in% c("pearson","spearman","kendall")) {
+    s <- cor(t(y),t(x),method=method)
+  } else {
+    stop(paste("Error: enter a valid type of similarity (jaccard, dice",
+               ",cosine, pearson, spearman, kendall)!"))
   }
-  rownames(s)=rownames(y)
-  colnames(s)=rownames(x)
+  rownames(s) <- rownames(y)
+  colnames(s) <- rownames(x)
   return(s)
 }
 
 
-#######create nearest neighbor object
-NNmat<-function(simmat,k_neighbors=NULL,type="sim"){
-  if(is.null(k_neighbors)) k_neighbors=ncol(simmat)
-  if(type=="sim") decFlag=TRUE else decFlag=FALSE  
-  NNdist=t(apply(simmat,1,sort,decreasing=decFlag))[,1:k_neighbors]
-  NNID=t(apply(simmat,1,order,decreasing=decFlag))[,1:k_neighbors]
-  NN=matrix(colnames(simmat)[NNID],nrow=nrow(simmat),ncol=k_neighbors,byrow=FALSE)[,1:k_neighbors]
-  list(NN=NN,NNdist=NNdist,NNID=NNID)
+############# NEAREST NEIGHBOR ############# 
+NNmat <- function(simmat, k_neighbors=NULL, type="sim") {
+  # Create nearest neighbor object
+  # Inputs: 
+  # - simmat: S matrix returned by "similarity"
+  # - k_neighbors: k
+  if (is.null(k_neighbors)) k_neighbors <- ncol(simmat)
+  if (type=="sim") decFlag <- TRUE else decFlag <- FALSE  
+  NNdist <- t(apply(simmat, 1, sort, decreasing=decFlag))[, 1:k_neighbors]
+  NNID <- t(apply(simmat, 1, order, decreasing=decFlag))[, 1:k_neighbors]
+  NN <- matrix(colnames(simmat)[NNID], nrow=nrow(simmat), ncol=k_neighbors,
+               byrow=FALSE)[, 1:k_neighbors]
+  list(NN=NN, NNdist=NNdist, NNID=NNID)
 }
 
 
-########loop to handle duplicate neighbors. Get next unrepeated neighbor
-uniqueNN<-function(relevantNN,NNnames){
-  #check for duplicated first NN
-  dupNN=names(relevantNN[duplicated(relevantNN[,1]),1])
-  for(i in 1:length(dupNN)){
-    #print(i)
+############# DUPLICATE NN HANDLING ############# 
+uniqueNN <- function(relevantNN, NNnames) {
+  # Loop to handle duplicate neighbors. Get next unrepeated neighbor.
+  # check for duplicated first NN
+  dupNN <- names(relevantNN[duplicated(relevantNN[, 1]), 1])
+  
+  for (i in 1:length(dupNN)) {
+    # print(i)
     j=2
-    temp=relevantNN[dupNN[i],j] #get 2nd nearest neighbor
-    #print(temp)
-    while(!is.na(temp)){
-      #print("temp is NOT na")
-      #check jth NN has not been repeated among first NN
-      if(!(temp %in% relevantNN[,1])){
-        relevantNN[dupNN[i],1]=temp #replace jth NN as first NN
-        #cat(j," as NN\n")
-        break #end case
-      }else{  #jth NN among first NN. Thus, get (j+1)th NN
-        #cat(j," among 1NN\n")
-        j=j+1
-        if(j<=ncol(relevantNN)){
-          temp=relevantNN[dupNN[i],j]
-        }else{
-          temp=NA
+    temp <- relevantNN[dupNN[i], j]  # get 2nd nearest neighbor
+    # print(temp)
+    while (!is.na(temp)) {
+      # print("temp is NOT na")
+      # check jth NN has not been repeated among first NN
+      if (!(temp %in% relevantNN[, 1])) {
+        relevantNN[dupNN[i], 1]=temp  # replace jth NN as first NN
+        # cat(j," as NN\n")
+        break  # end case
+      } else {  # jth NN among first NN. Thus, get (j+1)th NN
+        # cat(j," among 1NN\n")
+        j <- j+1
+        if (j<=ncol(relevantNN)) {
+          temp <- relevantNN[dupNN[i], j]
+        } else {
+          temp <- NA
           break
         }
       }
@@ -497,94 +589,126 @@ uniqueNN<-function(relevantNN,NNnames){
       #print("temp is na. Drop Row")
     }
   }
-  #check that relevantNN has no duplicates
-  if(sum(duplicated(relevantNN[,1]))>0) print("Error: NN is duplicated!")
   
-  #check that relevantNN has no NA 
-  relevantNN=relevantNN[!is.na(relevantNN[,1]),]
-  cat("Patients with unique NN: ",nrow(relevantNN),"\n")
+  # check that relevantNN has no duplicates
+  if (sum(duplicated(relevantNN[,1]))>0) print("Error: NN is duplicated!")
   
-  #map rowID numbers to xmat_ctrl names
-  vec=NNnames[relevantNN[,1]]
-  names(vec)=rownames(relevantNN)
+  # check that relevantNN has no NA 
+  relevantNN <- relevantNN[!is.na(relevantNN[, 1]), ]
+  cat("Patients with unique NN: ", nrow(relevantNN), "\n")
+  
+  # map rowID numbers to xmat_ctrl names
+  vec <- NNnames[relevantNN[, 1]]
+  names(vec) <- rownames(relevantNN)
   return(vec)
-
 }
 
-####put the previous 3 functions (similarity, NNmat, uniqueNN) together
-matchByDist<-function(xmat_ctrl,xmat_trted,method="jaccard",k_neighbors=10,caliper=NULL,nsd=3,algorithm="kd_tree"){
-  flush.console()
-  print("xmat_ctrl and xmat_trted should be auto-scaled and have patient IDs as row names.")
 
-  if(method %in% c("jaccard","dice","cosine","pearson","spearman","kendall")){
-    #checked that the seeds are the minor class
-    if(nrow(xmat_ctrl)>=nrow(xmat_trted)){
-      simmat=similarity(xmat_ctrl[sample(nrow(xmat_ctrl)),],xmat_trted[sample(nrow(xmat_trted)),],method)
+############# DISTANCE MATCHING ############# 
+matchByDist <- function(xmat_ctrl, xmat_trted, method="jaccard",
+                        k_neighbors=10, caliper=NULL, nsd=3, 
+                        algorithm="kd_tree") {
+  # Putting the previous three functions together...
+  flush.console()
+  print(paste("xmat_ctrl and xmat_trted should be auto-scaled and ",
+              "have patient IDs as row names."))
+
+  if (method %in% c("jaccard", "dice", "cosine", "pearson", 
+                    "spearman", "kendall")) {
+    # checked that the seeds are the minor class
+    # create similarity matrix
+    if (nrow(xmat_ctrl)>=nrow(xmat_trted)) {
+      simmat <- similarity(xmat_ctrl[sample(nrow(xmat_ctrl)),], 
+                           xmat_trted[sample(nrow(xmat_trted)),], method)
     }else{
-      simmat=similarity(xmat_trted[sample(nrow(xmat_trted)),],xmat_ctrl[sample(nrow(xmat_ctrl)),],method)
+      simmat <- similarity(xmat_trted[sample(nrow(xmat_trted)),], 
+                           xmat_ctrl[sample(nrow(xmat_ctrl)),], method)
     }
-    NNobj=NNmat(simmat,k_neighbors=k_neighbors,type="sim")
-    if(is.null(caliper)){
-      if(method %in% c("jaccard")){
-        caliper=0.6
-      }else if(method %in% c("dice","cosine","pearson","spearman","kendall")){
-        caliper=0.7
+    NNobj <- NNmat(simmat, k_neighbors <- k_neighbors, type="sim")
+    
+    if (is.null(caliper)) {  # if caliper not specified, manually set it
+      if (method %in% c("jaccard")) {
+        caliper <- 0.6
+      } else if(method %in% c("dice", "cosine", "pearson",
+                              "spearman", "kendall")) {
+        caliper <- 0.7
       }
     }
-  }else if(method=="euclidean"){
-    if(nrow(xmat_ctrl)>=nrow(xmat_trted)){
-      fNNobj=get.knnx(xmat_ctrl,query=xmat_trted,k=k_neighbors,algorithm=algorithm)
-    }else{
-      fNNobj=get.knnx(xmat_trted,query=xmat_ctrl,k=k_neighbors,algorithm=algorithm)
+    
+  } else if(method=="euclidean") {
+    if (nrow(xmat_ctrl)>=nrow(xmat_trted)) {
+      fNNobj <- get.knnx(xmat_ctrl, query=xmat_trted, k=k_neighbors,
+                       algorithm=algorithm)
+    } else {
+      fNNobj <- get.knnx(xmat_trted, query=xmat_ctrl, k=k_neighbors,
+                      algorithm=algorithm)
     }
-    NNobj=list(NN=NULL,NNdist=fNNobj$nn.dist,NNID=fNNobj$nn.index)
-    if(is.null(nsd)) nsd=3
-    if(is.numeric(nsd)) caliper=mean(NNobj$NNdist[,1])+nsd*sd(NNobj$NNdist[,1]) else stop("Error: nsd must be a number. Set 3 for 3 std deviations.")
+    NNobj <- list(NN=NULL, NNdist=fNNobj$nn.dist, NNID=fNNobj$nn.index)
+    if (is.null(nsd)) nsd <- 3
+    if (is.numeric(nsd)) {
+      caliper <- mean(NNobj$NNdist[, 1]) + nsd*sd(NNobj$NNdist[, 1]) 
+    } else {
+      stop("Error: nsd must be a number. Set 3 for 3 std deviations.")
+    }
   }
   
-  cat("Method: ",method,"\n")
-  cat("Caliper: ",caliper,"\n")
+  cat("Method: ", method, "\n")
+  cat("Caliper: ", caliper, "\n")
   
-  relevantNN=NNobj$NNID  #note that this is in the original row ID of the ctrl group. Either NN or NNID could do
-  cat("Patients with NN before applying caliper: ",nrow(relevantNN),"\n")
-  if(!is.null(rownames(xmat_trted)) & !is.null(rownames(xmat_ctrl))){
-    if(nrow(xmat_ctrl)>=nrow(xmat_trted)){
-      rownames(relevantNN)=rownames(xmat_trted)
-      majorNames=rownames(xmat_ctrl)
-    }else{
-      rownames(relevantNN)=rownames(xmat_ctrl)
-      majorNames=rownames(xmat_trted)
+  relevantNN <- NNobj$NNID
+  # (note that this is in the original row ID of the ctrl group
+  # Either NN or NNID could do.)
+  
+  cat("Patients with NN before applying caliper: ", nrow(relevantNN), "\n")
+  if (!is.null(rownames(xmat_trted)) & !is.null(rownames(xmat_ctrl))) {
+    if (nrow(xmat_ctrl)>=nrow(xmat_trted)) {
+      rownames(relevantNN) <- rownames(xmat_trted)
+      majorNames <- rownames(xmat_ctrl)
+    } else {
+      rownames(relevantNN) <- rownames(xmat_ctrl)
+      majorNames <- rownames(xmat_trted)
     }
-  }else stop("Error: xmat_trted or xmat_ctrl must have rownames!")
-  if(method=="euclidean") relevantNN[NNobj$NNdist>caliper]=NA else relevantNN[NNobj$NNdist<caliper]=NA
-  relevantNN=relevantNN[!is.na(relevantNN[,1]),] #drop row if first NN is NA
-  cat("Patients with NN after applying caliper: ",nrow(relevantNN),"\n")
+  } else stop("Error: xmat_trted or xmat_ctrl must have rownames!")
+  if (method=="euclidean") {
+    relevantNN[NNobj$NNdist>caliper] <- NA
+  } else {
+    relevantNN[NNobj$NNdist<caliper] <- NA
+  }
+  relevantNN <- relevantNN[!is.na(relevantNN[,1]),] # drop row if first NN is NA
+  cat("Patients with NN after applying caliper: ", nrow(relevantNN), "\n")
   
-  tryobj2=try(uniqueNN(relevantNN,NNnames=majorNames))
-  if(class(tryobj2)!="try-error") vec=tryobj2 else vec=NULL
-  list(matchedset=vec,NNobj=NNobj)
-  
+  tryobj2=try(uniqueNN(relevantNN, NNnames=majorNames))
+  if (class(tryobj2)!="try-error") vec <- tryobj2 else vec <- NULL
+  list(matchedset=vec, NNobj=NNobj)
 }
 
 
-#extract pvalues testing sig difference between groups among baseline char
-extractPval<-function(MatchingObj){
-  #initialize pval vector with pvalues of numerical variables
-  if(!is.null(MatchingObj$numvar[,"p.value"])) pval=as.numeric(MatchingObj$numvar[,"p.value"]) else pval=c()
-  names(pval)=c(rownames(MatchingObj$numvar))
-  #append with pvalues of categorical variables
-  pval=c(pval,sapply(MatchingObj$catvar,function(x) x[["p.value"]][1]))
+############# P-VALUE EXTRACTION ############# 
+extractPval <- function(MatchingObj){
+  # Extract pvalues testing sig difference between groups among baseline char
+  # initialize pval vector with pvalues of numerical variables
+  if (!is.null(MatchingObj$numvar[, "p.value"])) {
+    pval <- as.numeric(MatchingObj$numvar[, "p.value"]) 
+  } else {
+    pval <- c()
+  }
+  names(pval) <- c(rownames(MatchingObj$numvar))
+  # append with pvalues of categorical variables
+  pval <- c(pval, sapply(MatchingObj$catvar, function(x) x[["p.value"]][1]))
   return(pval)
 }
 
 
-
-extractSmd<-function(MatchingObj){
-  #initialize smd vector with pvalues of numerical variables
-  if(!is.null(MatchingObj$numvar[,"smd"])) smd=as.numeric(MatchingObj$numvar[,"smd"]) else smd=c()
-  names(smd)=c(rownames(MatchingObj$numvar))
-  #append with pvalues of categorical variables
-  smd=c(smd,sapply(MatchingObj$catvar,function(x) x[["smd"]][[1]]))
+############# SMD EXTRACTION ############# 
+extractSmd <- function(MatchingObj){
+  # initialize smd vector with pvalues of numerical variables
+  if (!is.null(MatchingObj$numvar[, "smd"])) {
+    smd <- as.numeric(MatchingObj$numvar[, "smd"])
+  } else {
+    smd <- c()
+  }
+  names(smd) <- c(rownames(MatchingObj$numvar))
+  # append with pvalues of categorical variables
+  smd <- c(smd, sapply(MatchingObj$catvar, function(x) x[["smd"]][[1]]))
   return(smd)
 }
-

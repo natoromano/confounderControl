@@ -10,9 +10,9 @@
 #############SET PARAMETERS######################
 #RScriptPath=Sys.getenv("RScriptPath") #Rscriptpath is an environment variable, path="/mnt/hgfs/Dropbox"
 #ProjectPath=Sys.getenv("ProjectPath") #Project is an environment variable, path="/mnt/hgfs/projects"
-RScriptPath="~/scripts"
-ProjectPath="~/projects"
-setwd(paste(ProjectPath,"/psm/models/compareAll",sep=""))
+# RScriptPath="~/scripts"
+# ProjectPath="~/projects"
+setwd("../models/compareAll")
 getwd()
 
 
