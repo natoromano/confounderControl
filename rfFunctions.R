@@ -34,6 +34,7 @@ causalForest <- function(data, name, covariates=NULL,
   # Outputs a data frame with columns mean(treated outcome) and mean(control 
   # outcome), one row per patient
   if (is.null(covariates)) covariates = paste('x', 1:10, sep="")
+  
   setwd(paste(RProjectPath, 'experiments', sep=""))
   orderedData = data[c(exposure, outcome, covariates)]
   filename <- paste(paste(name, outcome, sep="_"), '.txt', sep="")

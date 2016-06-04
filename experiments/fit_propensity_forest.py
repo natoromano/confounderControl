@@ -31,14 +31,17 @@ test_X = test_data[:,2:]
 
 pf = PropensityForest(n_estimators=n_estimators,
                       min_samples_leaf=3)
+
 print "Fitting Propensity Trees..."
 pf.fit(X=train_X, y=train_y, w=train_w)
 
 print "Applying to test set..."
+
 try:
     method = sys.argv[5]
 except IndexError:
     method = 'outcomes'
+
 if method == 'effect':
     # Returns vector of mean((treated outcomes) - (control outcomes))
     if confidence_interval:

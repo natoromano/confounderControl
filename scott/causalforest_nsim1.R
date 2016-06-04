@@ -83,7 +83,7 @@ desiredOrder <- c("n1", "effect_matched", "se_matched",
 # simulation variables
 set.seed(10)
 n <- 1000
-estimators <- 1000 # number of estimators for causal forests
+estimators <- 100 # number of estimators for causal forests
 
 # genre variable
 gen <- c(rep(0,n/2), rep(1,n/2))
@@ -144,5 +144,4 @@ heterogeneousEffects <- as.matrix(data.frame(effect=tre,
 stopCluster(cl)
 dimnames(heterogeneousEffects) <- list(1:n, c('effect', 'power', 'power.ci', 
                                               'propensity', 'propensity.ci'))
-save(ds, ds_train,
-     heterogeneousEffects, file=paste(name, 'results.RData', sep="_"))
+save(ds, heterogeneousEffects, file=paste(name, 'results.RData', sep="_"))

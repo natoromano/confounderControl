@@ -31,9 +31,9 @@ test_X = test_data[:,2:]
 
 pf = PowersForest(n_estimators=n_estimators,
                   min_samples_leaf=3)
+
 print "Fitting Powers Trees..."
 pf.fit(X=train_X, y=train_y, w=train_w)
-
 
 print "Applying to test set..."
 method = sys.argv[5]
